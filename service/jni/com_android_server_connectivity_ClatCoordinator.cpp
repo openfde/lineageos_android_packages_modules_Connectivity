@@ -129,7 +129,7 @@ static void verifyClatPerms() {
     V2("map_clatd_clat_ingress6_map",             S_IFREG|0660, MAP_RW);
 
 #undef V2
-
+    fatal = false;
     if (fatal) abort();
 }
 

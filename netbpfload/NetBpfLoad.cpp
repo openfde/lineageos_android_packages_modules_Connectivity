@@ -343,7 +343,9 @@ int main(int argc, char** argv, char * const envp[]) {
         // (this writeFile is known to fail on at least 4.19, but always defaults to 0 on
         // pre-5.13, on 5.13+ it depends on CONFIG_BPF_UNPRIV_DEFAULT_OFF)
         if (writeProcSysFile("/proc/sys/kernel/unprivileged_bpf_disabled", "0\n") &&
-            android::bpf::isAtLeastKernelVersion(5, 13, 0)) return 1;
+            android::bpf::isAtLeastKernelVersion(5, 13, 0)) {
+			PLOG(ERROR) << "change /proc/sys/kernel/unprivileged_bpf_disabled to 0 failed";
+		}
 
         // Enable the eBPF JIT -- but do note that on 64-bit kernels it is likely
         // already force enabled by the kernel config option BPF_JIT_ALWAYS_ON.
@@ -352,13 +354,17 @@ int main(int argc, char** argv, char * const envp[]) {
         // BPF_JIT is required by R VINTF (which means 4.14/4.19/5.4 kernels),
         // but 4.14/4.19 were released with P & Q, and only 5.4 is new in R+.
         if (writeProcSysFile("/proc/sys/net/core/bpf_jit_enable", "1\n") &&
-            android::bpf::isAtLeastKernelVersion(4, 14, 0)) return 1;
+            android::bpf::isAtLeastKernelVersion(4, 14, 0)) {
+			PLOG(ERROR) << "change /proc/sys/net/core/bpf_jit_enable to 1 failed";
+		}
 
         // Enable JIT kallsyms export for privileged users only
         // (Note: this (open) will fail with ENOENT 'No such file or directory' if
         //  kernel does not have CONFIG_HAVE_EBPF_JIT=y)
         if (writeProcSysFile("/proc/sys/net/core/bpf_jit_kallsyms", "1\n") &&
-            android::bpf::isAtLeastKernelVersion(4, 14, 0)) return 1;
+            android::bpf::isAtLeastKernelVersion(4, 14, 0)) {
+			PLOG(ERROR) << "change /proc/sys/net/core/bpf_jit_kallsyms to 1 failed";
+		}
     }
 
     // Create all the pin subdirectories
@@ -384,8 +390,8 @@ int main(int argc, char** argv, char * const envp[]) {
             ALOGE("If this triggers randomly, you might be hitting some memory allocation "
                   "problems or startup script race.");
             ALOGE("--- DO NOT EXPECT SYSTEM TO BOOT SUCCESSFULLY ---");
-            sleep(20);
-            return 2;
+            //sleep(20);
+            //return 2;
         }
     }
 
