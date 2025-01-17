@@ -67,6 +67,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
+import android.openfde.Net;
+
 /**
  * Tracks Ethernet interfaces and manages interface configurations.
  *
@@ -137,6 +139,8 @@ public class EthernetTracker {
 
     private int mEthernetState = ETHERNET_STATE_ENABLED;
 
+    private Net net = Net.getInstance(null);
+
     private class TetheredInterfaceRequestList extends
             RemoteCallbackList<ITetheredInterfaceCallback> {
         @Override
@@ -166,11 +170,27 @@ public class EthernetTracker {
         }
 
         private void onNewLink(String ifname, boolean linkUp) {
+            /*
             if (!mFactory.hasInterface(ifname) && !ifname.equals(mTetheringInterface)) {
                 Log.i(TAG, "onInterfaceAdded, iface: " + ifname);
                 maybeTrackInterface(ifname);
             }
+            */
             Log.i(TAG, "interfaceLinkStateChanged, iface: " + ifname + ", up: " + linkUp);
+            //like usb wifi/ethernet,interface name maybe rename, such "eth0"->"enx112233445566",
+            //"wlan0"->"wlx112233445566", when hotplug;case we no chance to addInterface for rename's
+            if (linkUp) {
+                maybeTrackInterface(ifname);
+            }
+            if (linkUp && (net.ipConfiged(ifname) == 0)) {
+                Log.i(TAG, "interfaceLinkStateChanged sleep");
+                try {
+                    Thread.sleep(500);
+                } catch (Exception ex) {
+                    Log.e(TAG, "interfaceLinkStateChanged, sleep Exception: " + ex);
+                }
+                return;
+            }
             updateInterfaceState(ifname, linkUp);
         }
 
@@ -237,6 +257,7 @@ public class EthernetTracker {
         mNetd = netd;
         mDeps = deps;
 
+        /*
         // Interface match regex.
         String ifaceMatchRegex = mDeps.getInterfaceRegexFromResource(mContext);
         // "*" is a magic string to indicate "pick the default".
@@ -256,14 +277,16 @@ public class EthernetTracker {
         for (String strConfig : interfaceConfigs) {
             parseEthernetConfig(strConfig);
         }
-
+        */
+        mIfaceMatch = "eth\\d+";
         mConfigStore = new EthernetConfigStore();
         mNetlinkMonitor = new EthernetNetlinkMonitor(mHandler);
     }
 
     void start() {
         mFactory.register();
-        mConfigStore.read();
+        //mConfigStore.read();
+        mConfigStore.constructIpConfigurations();
 
         final ArrayMap<String, IpConfiguration> configs = mConfigStore.getIpConfigurations();
         for (int i = 0; i < configs.size(); i++) {
@@ -647,9 +670,24 @@ public class EthernetTracker {
         updateInterfaceState(iface, up, new EthernetCallback(null /* cb */));
     }
 
+    private void updateConfigStore(String iface) {
+        mConfigStore.constructIpConfigurations();
+        //mIpConfigForDefaultInterface = mConfigStore.getIpConfigurationForDefaultInterface();
+        final ArrayMap<String, IpConfiguration> configs = mConfigStore.getIpConfigurations();
+        if (configs.containsKey(iface)) {
+            mIpConfigurations.remove(iface);
+            mIpConfigurations.put(iface, configs.get(iface));
+            updateIpConfiguration(iface, configs.get(iface));
+            //mFactory.updateIpConfiguration(iface, configs.get(iface));
+        }
+    }
+
     // TODO(b/225315248): enable/disableInterface() should not affect link state.
     private void updateInterfaceState(String iface, boolean up, EthernetCallback cb) {
         final int mode = getInterfaceMode(iface);
+        if (up) {
+            updateConfigStore(iface);
+        }
         if (mode == INTERFACE_MODE_SERVER || !mFactory.hasInterface(iface)) {
             // The interface is in server mode or is not tracked.
             cb.onError("Failed to set link state " + (up ? "up" : "down") + " for " + iface);
@@ -686,10 +724,11 @@ public class EthernetTracker {
     }
 
     private void maybeTrackInterface(String iface) {
+    /*
         if (!isValidEthernetInterface(iface)) {
             return;
         }
-
+    */
         // If we don't already track this interface, and if this interface matches
         // our regex, start tracking it.
         if (mFactory.hasInterface(iface) || iface.equals(mTetheringInterface)) {
@@ -711,10 +750,13 @@ public class EthernetTracker {
     private void trackAvailableInterfaces() {
         try {
             final String[] ifaces = mNetd.interfaceGetList();
+            String interfaces = net.getLansAndWlans();
             for (String iface : ifaces) {
-                maybeTrackInterface(iface);
+                if (interfaces.contains(iface)) {
+                   maybeTrackInterface(iface);
+                }
             }
-        } catch (RemoteException | ServiceSpecificException e) {
+        } catch (NullPointerException | RemoteException | ServiceSpecificException e) {
             Log.e(TAG, "Could not get list of interfaces " + e);
         }
     }
@@ -916,7 +958,8 @@ public class EthernetTracker {
     }
 
     private boolean isValidEthernetInterface(String iface) {
-        return iface.matches(mIfaceMatch) || isValidTestInterface(iface);
+        //return iface.matches(mIfaceMatch) || isValidTestInterface(iface);
+        return net.getLansAndWlans().contains(iface) || isValidTestInterface(iface);
     }
 
     /**
