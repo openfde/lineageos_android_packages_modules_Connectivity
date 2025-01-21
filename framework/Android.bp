@@ -133,6 +133,7 @@ java_library {
         "framework-location.stubs.module_lib",
         "framework-tethering.impl",
         "framework-wifi.stubs.module_lib",
+        "framework-wifi.impl",
     ],
     visibility: ["//packages/modules/Connectivity:__subpackages__"],
 }
