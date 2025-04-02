@@ -158,7 +158,7 @@ public class EthernetConfigStore {
     public ArrayMap<String, IpConfiguration> readIpConfigurations(){
         ArrayMap<String, IpConfiguration> networks = new ArrayMap<>();
         Net net = Net.getInstance(null);
-        String ipConfigurationsFromHost = net.getLanAndWlanIpConfigurations();
+        String ipConfigurationsFromHost = net.getLanWlanBridgeIpConfigurations();
         if (ipConfigurationsFromHost == null || ipConfigurationsFromHost.isEmpty()) {
             return networks;
         }

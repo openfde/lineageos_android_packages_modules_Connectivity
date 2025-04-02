@@ -750,7 +750,7 @@ public class EthernetTracker {
     private void trackAvailableInterfaces() {
         try {
             final String[] ifaces = mNetd.interfaceGetList();
-            String interfaces = net.getLansAndWlans();
+            String interfaces = net.getLansWlansBridges();
             for (String iface : ifaces) {
                 if (interfaces.contains(iface)) {
                    maybeTrackInterface(iface);
@@ -959,7 +959,7 @@ public class EthernetTracker {
 
     private boolean isValidEthernetInterface(String iface) {
         //return iface.matches(mIfaceMatch) || isValidTestInterface(iface);
-        return net.getLansAndWlans().contains(iface) || isValidTestInterface(iface);
+        return net.getLansWlansBridges().contains(iface) || isValidTestInterface(iface);
     }
 
     /**
