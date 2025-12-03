@@ -165,15 +165,18 @@ public class EthernetConfigStore {
         String[] interfaceInfo = ipConfigurationsFromHost.split(";");
         for (String i : interfaceInfo) {
             String[] info = i.split("#");
+            if (info.length <= 2) {
+                continue;
+            }
             String interfaceName = info[0];
             StaticIpConfiguration staticIpConfiguration = new StaticIpConfiguration();
-            String ipHasPrefixLength = info.length > 1 ? info[1] : null;
+            String ipHasPrefixLength = info[1];
             if (ipHasPrefixLength != null) {
                 String[] ipAndPrefixLength = ipHasPrefixLength.split("/");
                 LinkAddress linkAddr = new LinkAddress(NetworkUtils.numericToInetAddress(ipAndPrefixLength[0]), Integer.parseInt(ipAndPrefixLength[1]));
                 staticIpConfiguration.ipAddress = linkAddr;
             }
-            InetAddress gateway = NetworkUtils.numericToInetAddress(info.length > 2 ? info[2] : null);
+            InetAddress gateway = NetworkUtils.numericToInetAddress(info[2]);
             staticIpConfiguration.gateway = gateway;
             String dnss = info.length > 3 ? info[3] : null;
             if (dnss == null || dnss.isEmpty()) {
