@@ -18,14 +18,23 @@ package com.android.server.ethernet;
 
 import static com.android.net.module.util.DeviceConfigUtils.TETHERING_MODULE_NAME;
 
+import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.content.ApexEnvironment;
+import android.content.Context;
+import android.net.DnsResolverServiceManager;
+import android.net.IDnsResolver;
 import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkAddress;
+import android.net.NetworkCapabilities;
 import android.net.NetworkUtils;
+import android.net.ResolverParamsParcel;
 import android.net.StaticIpConfiguration;
 import android.os.Environment;
+import android.os.RemoteException;
+import android.os.ServiceSpecificException;
 import android.util.ArrayMap;
 import android.util.AtomicFile;
 import android.util.Log;
@@ -38,6 +47,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 
 import java.net.InetAddress;
+import java.util.List;
+
 import android.openfde.Net;
 
 /**
@@ -52,12 +63,31 @@ public class EthernetConfigStore {
     private static final String APEX_IP_CONFIG_FILE_PATH = ApexEnvironment.getApexEnvironment(
             TETHERING_MODULE_NAME).getDeviceProtectedDataDir() + FILE_PATH;
 
+    /* Defaults for resolver parameters, keep in sync with DnsManager. */
+    private static final int DNS_RESOLVER_DEFAULT_SAMPLE_VALIDITY_SECONDS = 1800;
+    private static final int DNS_RESOLVER_DEFAULT_SUCCESS_THRESHOLD_PERCENT = 25;
+    private static final int DNS_RESOLVER_DEFAULT_MIN_SAMPLES = 8;
+    private static final int DNS_RESOLVER_DEFAULT_MAX_SAMPLES = 64;
+
     private IpConfigStore mStore = new IpConfigStore();
     private final ArrayMap<String, IpConfiguration> mIpConfigurations;
     private final Object mSync = new Object();
+    @Nullable private final Context mContext;
+    @Nullable private volatile IDnsResolver mDnsResolver;
 
     public EthernetConfigStore() {
+        this(null, null);
+    }
+
+    public EthernetConfigStore(@Nullable final Context context) {
+        this(context, null);
+    }
+
+    @VisibleForTesting
+    EthernetConfigStore(@Nullable final Context context, @Nullable final IDnsResolver resolver) {
         mIpConfigurations = new ArrayMap<>(0);
+        mContext = context;
+        mDnsResolver = resolver;
     }
 
     private static boolean doesConfigFileExist(final String filepath) {
@@ -153,6 +183,100 @@ public class EthernetConfigStore {
         synchronized (mSync) {
             return new ArrayMap<>(mIpConfigurations);
         }
+    }
+
+    /**
+     * Set DNS servers for the given interface only, without touching the rest of its
+     * configuration. The new servers are persisted and, if the interface currently has a
+     * connected network, immediately pushed to the DNS resolver via
+     * {@link IDnsResolver#setResolverConfiguration}.
+     *
+     * @param iface interface name.
+     * @param netId netId of the network currently running on the interface, or a negative
+     *        value if the interface is not connected; in that case the new servers are only
+     *        persisted and will be applied on the next provisioning.
+     * @param servers the DNS servers to use, must not be empty.
+     * @return true if the configuration was updated and, when netId >= 0, successfully pushed
+     *         to the resolver.
+     */
+    public boolean setDnsServers(@NonNull final String iface, final int netId,
+            @NonNull final List<InetAddress> servers) {
+        return setDnsServers(iface, netId, servers, APEX_IP_CONFIG_FILE_PATH + CONFIG_FILE);
+    }
+
+    @VisibleForTesting
+    boolean setDnsServers(@NonNull final String iface, final int netId,
+            @NonNull final List<InetAddress> servers, @NonNull final String filepath) {
+        if (servers.isEmpty()) {
+            Log.e(TAG, "setDnsServers: empty server list for " + iface);
+            return false;
+        }
+
+        // Persist the new servers into the stored configuration.
+        synchronized (mSync) {
+            final IpConfiguration oldConfig = mIpConfigurations.get(iface);
+            if (oldConfig == null) {
+                Log.e(TAG, "setDnsServers: no configuration for " + iface);
+                return false;
+            }
+            final IpConfiguration newConfig = new IpConfiguration(oldConfig);
+            if (newConfig.getStaticIpConfiguration() == null) {
+                newConfig.setStaticIpConfiguration(new StaticIpConfiguration());
+            }
+            newConfig.getStaticIpConfiguration().dnsServers.clear();
+            newConfig.getStaticIpConfiguration().dnsServers.addAll(servers);
+            if (!newConfig.equals(oldConfig)) {
+                mIpConfigurations.put(iface, newConfig);
+                final File directory = new File(filepath).getParentFile();
+                if (directory != null && !directory.exists()) {
+                    directory.mkdirs();
+                }
+                mStore.writeIpConfigurations(filepath, mIpConfigurations);
+            }
+        }
+
+        // The binder call must not be made while holding mSync.
+        if (netId < 0) return true;
+
+        final IDnsResolver resolver = getDnsResolver();
+        if (resolver == null) {
+            Log.e(TAG, "setDnsServers: dnsresolver service not available");
+            return false;
+        }
+        final ResolverParamsParcel parcel = new ResolverParamsParcel();
+        parcel.netId = netId;
+        parcel.sampleValiditySeconds = DNS_RESOLVER_DEFAULT_SAMPLE_VALIDITY_SECONDS;
+        parcel.successThreshold = DNS_RESOLVER_DEFAULT_SUCCESS_THRESHOLD_PERCENT;
+        parcel.minSamples = DNS_RESOLVER_DEFAULT_MIN_SAMPLES;
+        parcel.maxSamples = DNS_RESOLVER_DEFAULT_MAX_SAMPLES;
+        parcel.servers = new String[servers.size()];
+        for (int i = 0; i < servers.size(); i++) {
+            parcel.servers[i] = servers.get(i).getHostAddress();
+        }
+        parcel.domains = new String[0];
+        parcel.tlsName = "";
+        parcel.tlsServers = new String[0];
+        parcel.transportTypes = new int[] { NetworkCapabilities.TRANSPORT_ETHERNET };
+        parcel.meteredNetwork = false;
+        try {
+            resolver.setResolverConfiguration(parcel);
+        } catch (RemoteException | ServiceSpecificException e) {
+            Log.e(TAG, "setDnsServers: error setting DNS configuration", e);
+            return false;
+        }
+        return true;
+    }
+
+    @Nullable
+    private IDnsResolver getDnsResolver() {
+        if (mDnsResolver == null && mContext != null) {
+            final DnsResolverServiceManager dsm =
+                    mContext.getSystemService(DnsResolverServiceManager.class);
+            if (dsm != null) {
+                mDnsResolver = IDnsResolver.Stub.asInterface(dsm.getService());
+            }
+        }
+        return mDnsResolver;
     }
 
     public ArrayMap<String, IpConfiguration> readIpConfigurations(){

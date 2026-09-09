@@ -26,6 +26,7 @@ import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkProperties;
+import android.net.Network;
 import android.net.NetworkAgentConfig;
 import android.net.NetworkCapabilities;
 import android.net.NetworkProvider;
@@ -52,6 +53,8 @@ import com.android.net.module.util.InterfaceParams;
 import com.android.server.connectivity.ConnectivityResources;
 
 import java.io.FileDescriptor;
+import java.net.InetAddress;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -248,6 +251,33 @@ public class EthernetNetworkFactory {
     @VisibleForTesting
     protected boolean hasInterface(String ifaceName) {
         return mTrackingInterfaces.containsKey(ifaceName);
+    }
+
+    /**
+     * Returns the netId of the network currently running on the given interface, or -1 if
+     * the interface is not tracked or has no connected network.
+     */
+    int getNetId(@NonNull final String iface) {
+        final NetworkInterfaceState state = mTrackingInterfaces.get(iface);
+        if (state == null || state.mNetworkAgent == null) return -1;
+        final Network network = state.mNetworkAgent.getNetwork();
+        return network == null ? -1 : network.netId;
+    }
+
+    /**
+     * Update the DNS servers in the current LinkProperties of the given interface and, if a
+     * network is connected, notify ConnectivityService so that the DNS configuration it
+     * manages via DnsManager stays in sync with servers set through
+     * {@link EthernetConfigStore#setDnsServers}.
+     */
+    void updateLinkPropertiesDns(@NonNull final String iface,
+            @NonNull final List<InetAddress> servers) {
+        final NetworkInterfaceState state = mTrackingInterfaces.get(iface);
+        if (state == null) return;
+        state.mLinkProperties.setDnsServers(servers);
+        if (state.mNetworkAgent != null) {
+            state.mNetworkAgent.sendLinkPropertiesImpl(state.mLinkProperties);
+        }
     }
 
     @VisibleForTesting

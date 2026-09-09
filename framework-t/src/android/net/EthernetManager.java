@@ -212,6 +212,27 @@ public class EthernetManager {
     }
 
     /**
+     * Set DNS servers for the given ethernet interface, without touching the rest of its
+     * configuration.
+     *
+     * The new servers take effect immediately if the interface currently has a connected
+     * network, and are persisted so they survive reboots and network reprovisioning.
+     *
+     * @param iface name of the interface, e.g. eth0.
+     * @param servers list of DNS server IP addresses, must not be empty.
+     * @hide
+     */
+    @SystemApi
+    @RequiresPermission(android.Manifest.permission.NETWORK_SETTINGS)
+    public void setDnsServers(@NonNull String iface, @NonNull List<String> servers) {
+        try {
+            mService.setDnsServers(iface, servers);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
      * Indicates whether the system currently has one or more Ethernet interfaces.
      * @hide
      */
