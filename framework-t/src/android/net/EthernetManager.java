@@ -19,6 +19,7 @@ package android.net;
 import static android.annotation.SystemApi.Client.MODULE_LIBRARIES;
 
 import android.annotation.CallbackExecutor;
+import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -223,6 +224,7 @@ public class EthernetManager {
      * @hide
      */
     @SystemApi
+    @FlaggedApi("com.android.net.flags.ethernet_set_dns_servers")
     @RequiresPermission(android.Manifest.permission.NETWORK_SETTINGS)
     public void setDnsServers(@NonNull String iface, @NonNull List<String> servers) {
         try {
