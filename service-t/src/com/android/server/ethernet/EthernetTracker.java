@@ -22,6 +22,10 @@ import static android.net.TestNetworkManager.TEST_TAP_PREFIX;
 
 import static com.android.internal.annotations.VisibleForTesting.Visibility.PACKAGE;
 
+import android.content.BroadcastReceiver;   // ★ 新增
+import android.content.Intent;              // ★ 新增
+import android.content.IntentFilter;        // ★ 新增
+
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.content.Context;
@@ -93,6 +97,11 @@ public class EthernetTracker {
     private static final boolean DBG = EthernetNetworkFactory.DBG;
 
     private static final String TEST_IFACE_REGEXP = TEST_TAP_PREFIX + "\\d+";
+
+    // 自定义广播 Action（建议定义为常量，放在公共位置或直接使用字符串）
+    private static final String ACTION_REFRESH_DNS = 
+        "com.openfde.connectivity.action.REFRESH_DNS";
+    private static final String EXTRA_IFACE_NAME = "iface_name";
 
     // TODO: consider using SharedLog consistently across ethernet service.
     private static final SharedLog sLog = new SharedLog(TAG);
@@ -283,10 +292,90 @@ public class EthernetTracker {
         mNetlinkMonitor = new EthernetNetlinkMonitor(mHandler);
     }
 
+    // 新增：广播接收器
+    private final BroadcastReceiver mDnsRefreshReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Log.e(TAG, "gy on receive broadcas tReceived DNS refresh request for iface: ");
+            if (!ACTION_REFRESH_DNS.equals(intent.getAction())) {
+                return;
+            }
+            
+            String iface = intent.getStringExtra(EXTRA_IFACE_NAME);
+            Log.e(TAG, "gy Received DNS refresh request for iface: " + iface);
+            
+            // 切换到 Handler 线程执行，避免阻塞广播
+            mHandler.post(() -> handleDnsRefresh(iface));
+        }
+    };
+
+    // 新增：处理 DNS 刷新逻辑
+    private void handleDnsRefresh(String iface) {
+        // 1. 强制从宿主机重新读取配置（基于你的 commit 代码）
+        mConfigStore.constructRefreshIpConfigurations();
+        
+        if (iface == null || iface.isEmpty()) {
+            // 刷新所有接口
+            refreshAllInterfaces();
+        } else {
+            // 刷新指定接口
+            refreshSingleInterface(iface);
+        }
+    }
+
+    private void refreshAllInterfaces() {
+        final ArrayMap<String, IpConfiguration> configs = mConfigStore.getIpConfigurations();
+        for (int i = 0; i < configs.size(); i++) {
+            String ifname = configs.keyAt(i);
+            IpConfiguration config = configs.valueAt(i);
+            
+            // 只更新已跟踪的接口
+            if (mFactory.hasInterface(ifname)) {
+                mIpConfigurations.put(ifname, config);
+                updateIpConfiguration(ifname, config);
+                Log.d(TAG, "Refreshed DNS for " + ifname + ": " + 
+                      (config.staticIpConfiguration != null ? 
+                       config.staticIpConfiguration.dnsServers : "null"));
+            }
+        }
+    }
+
+    private void refreshSingleInterface(String iface) {
+        if (!isValidEthernetInterface(iface)) {
+            Log.w(TAG, "Invalid interface for DNS refresh: " + iface);
+            return;
+        }
+        
+        IpConfiguration newConfig = mConfigStore.getIpConfigurations().get(iface);
+        if (newConfig == null) {
+            Log.w(TAG, "No config found for interface: " + iface);
+            return;
+        }
+        
+        // 更新内存中的配置
+        mIpConfigurations.remove(iface);
+        mIpConfigurations.put(iface, newConfig);
+        
+        // 应用到系统（触发 IpClient 更新，最终会到 DnsResolver）
+        updateIpConfiguration(iface, newConfig);
+        
+        Log.i(TAG, "DNS refreshed for " + iface + ", new DNS: " + 
+              (newConfig.staticIpConfiguration != null ? 
+               newConfig.staticIpConfiguration.dnsServers : "null"));
+    }
+
+
     void start() {
         mFactory.register();
         //mConfigStore.read();
         mConfigStore.constructIpConfigurations();
+
+         // 注册广播接收器（需要权限校验）
+        IntentFilter filter = new IntentFilter(ACTION_REFRESH_DNS);
+        // 第三个参数为权限，只有持有该权限的应用才能发送广播触发
+        // 注意：NETWORK_STACK 是系统权限，只有系统应用（如 Settings）持有
+        mContext.registerReceiver(mDnsRefreshReceiver, filter, 
+            android.Manifest.permission.NETWORK_STACK, mHandler);
 
         final ArrayMap<String, IpConfiguration> configs = mConfigStore.getIpConfigurations();
         for (int i = 0; i < configs.size(); i++) {
@@ -996,6 +1085,8 @@ public class EthernetTracker {
             } else {
                 // TODO: maybe also disable server mode interface as well.
                 untrackFactoryInterfaces();
+                mContext.unregisterReceiver(mDnsRefreshReceiver);
+                
             }
             broadcastEthernetStateChange(mEthernetState);
         });

@@ -195,6 +195,51 @@ public class EthernetConfigStore {
         return networks;
     }
 
+    public ArrayMap<String, IpConfiguration> refreshIpConfigurations(){
+        ArrayMap<String, IpConfiguration> networks = new ArrayMap<>();
+        Net net = Net.getInstance(null);
+        String ipConfigurationsFromHost = net.getLanWlanBridgeIpConfigurations();
+        if (ipConfigurationsFromHost == null || ipConfigurationsFromHost.isEmpty()) {
+            return networks;
+        }
+        String[] interfaceInfo = ipConfigurationsFromHost.split(";");
+        for (String i : interfaceInfo) {
+            String[] info = i.split("#");
+            if (info.length <= 2) {
+                continue;
+            }
+            String interfaceName = info[0];
+            StaticIpConfiguration staticIpConfiguration = new StaticIpConfiguration();
+            String ipHasPrefixLength = info[1];
+            if (ipHasPrefixLength != null) {
+                String[] ipAndPrefixLength = ipHasPrefixLength.split("/");
+                LinkAddress linkAddr = new LinkAddress(NetworkUtils.numericToInetAddress(ipAndPrefixLength[0]), Integer.parseInt(ipAndPrefixLength[1]));
+                staticIpConfiguration.ipAddress = linkAddr;
+            }
+            InetAddress gateway = NetworkUtils.numericToInetAddress(info[2]);
+            staticIpConfiguration.gateway = gateway;
+            String dnss ="8.8.8.8";
+            String[] dnssL = dnss.split(" \\| ");
+            for (String d : dnssL) {
+                Log.e(TAG,"gy dns servers add " + d);
+                staticIpConfiguration.dnsServers.add(NetworkUtils.numericToInetAddress(d));
+            }
+            IpConfiguration config = new IpConfiguration();
+            networks.put(interfaceName, config);
+            config.staticIpConfiguration = staticIpConfiguration;
+            config.ipAssignment = IpAssignment.STATIC;
+            config.proxySettings = ProxySettings.NONE;
+        }
+        return networks;
+    }
+
+    public void constructRefreshIpConfigurations() {
+        synchronized (mSync) {
+            mIpConfigurations.clear();
+            mIpConfigurations.putAll(refreshIpConfigurations());
+            //mStore.writeIpConfigurations(APEX_IP_CONFIG_FILE_PATH, mIpConfigurations);
+        }
+    }
     public void constructIpConfigurations() {
         synchronized (mSync) {
             mIpConfigurations.clear();
