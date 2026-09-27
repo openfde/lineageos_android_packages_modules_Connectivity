@@ -17,16 +17,24 @@
 package com.android.server.ethernet;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+
 import android.content.Context;
+import android.net.IDnsResolver;
 import android.net.InetAddresses;
 import android.net.IpConfiguration;
 import android.net.IpConfiguration.IpAssignment;
 import android.net.IpConfiguration.ProxySettings;
 import android.net.LinkAddress;
 import android.net.ProxyInfo;
+import android.net.ResolverParamsParcel;
 import android.net.StaticIpConfiguration;
 import android.util.ArrayMap;
 
@@ -37,6 +45,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
+import org.mockito.ArgumentCaptor;
 
 import java.io.File;
 import java.net.InetAddress;
@@ -139,5 +148,75 @@ public class EthernetConfigStoreTest {
         final File apexConfigFile = new File(mApexTestDir.getPath() + "/test.txt");
         apexConfigFile.delete();
         mLegacyConfigFile.delete();
+    }
+
+    @Test
+    public void testSetDnsServersPersistsAndPushesToResolver() throws Exception {
+        final IDnsResolver resolver = mock(IDnsResolver.class);
+        final EthernetConfigStore store = new EthernetConfigStore(null, resolver);
+        final File configFile = new File(mApexTestDir.getPath(), "test.txt");
+        store.write("eth0", LEGACY_IP_CONFIG, configFile.getPath());
+        waitForMs(50);
+
+        final List<InetAddress> newDns =
+                List.of(InetAddresses.parseNumericAddress("1.1.1.1"));
+        assertTrue(store.setDnsServers("eth0", 42, newDns, configFile.getPath()));
+
+        // The new servers are persisted into the stored configuration.
+        final ArrayMap<String, IpConfiguration> configs = store.getIpConfigurations();
+        assertEquals(newDns, configs.get("eth0").getStaticIpConfiguration().dnsServers);
+
+        // And pushed to the resolver with the given netId and DnsManager-compatible defaults.
+        final ArgumentCaptor<ResolverParamsParcel> captor =
+                ArgumentCaptor.forClass(ResolverParamsParcel.class);
+        verify(resolver).setResolverConfiguration(captor.capture());
+        final ResolverParamsParcel parcel = captor.getValue();
+        assertEquals(42, parcel.netId);
+        assertEquals(1, parcel.servers.length);
+        assertEquals("1.1.1.1", parcel.servers[0]);
+        assertEquals("", parcel.tlsName);
+        assertEquals(0, parcel.tlsServers.length);
+        assertEquals(1800, parcel.sampleValiditySeconds);
+        assertEquals(25, parcel.successThreshold);
+        assertEquals(8, parcel.minSamples);
+        assertEquals(64, parcel.maxSamples);
+
+        configFile.delete();
+    }
+
+    @Test
+    public void testSetDnsServersNotConnectedOnlyPersists() throws Exception {
+        final IDnsResolver resolver = mock(IDnsResolver.class);
+        final EthernetConfigStore store = new EthernetConfigStore(null, resolver);
+        final File configFile = new File(mApexTestDir.getPath(), "test.txt");
+        store.write("eth0", LEGACY_IP_CONFIG, configFile.getPath());
+        waitForMs(50);
+
+        final List<InetAddress> newDns =
+                List.of(InetAddresses.parseNumericAddress("1.1.1.1"));
+        assertTrue(store.setDnsServers("eth0", -1, newDns, configFile.getPath()));
+
+        // No binder call is made when the interface has no connected network.
+        verify(resolver, never()).setResolverConfiguration(any());
+        assertEquals(newDns,
+                store.getIpConfigurations().get("eth0").getStaticIpConfiguration().dnsServers);
+
+        configFile.delete();
+    }
+
+    @Test
+    public void testSetDnsServersRejectsEmptyListAndUnknownIface() throws Exception {
+        final IDnsResolver resolver = mock(IDnsResolver.class);
+        final EthernetConfigStore store = new EthernetConfigStore(null, resolver);
+        final File configFile = new File(mApexTestDir.getPath(), "test.txt");
+        store.write("eth0", LEGACY_IP_CONFIG, configFile.getPath());
+        waitForMs(50);
+
+        assertFalse(store.setDnsServers("eth0", 42, List.of(), configFile.getPath()));
+        assertFalse(store.setDnsServers("eth1", 42,
+                List.of(InetAddresses.parseNumericAddress("1.1.1.1")), configFile.getPath()));
+        verify(resolver, never()).setResolverConfiguration(any());
+
+        configFile.delete();
     }
 }

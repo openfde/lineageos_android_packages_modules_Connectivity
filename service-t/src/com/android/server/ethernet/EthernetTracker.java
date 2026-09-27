@@ -279,7 +279,7 @@ public class EthernetTracker {
         }
         */
         mIfaceMatch = "eth\\d+";
-        mConfigStore = new EthernetConfigStore();
+        mConfigStore = new EthernetConfigStore(mContext);
         mNetlinkMonitor = new EthernetNetlinkMonitor(mHandler);
     }
 
@@ -306,6 +306,25 @@ public class EthernetTracker {
         writeIpConfiguration(iface, ipConfiguration);
         mHandler.post(() -> {
             mFactory.updateInterface(iface, ipConfiguration, null);
+            broadcastInterfaceStateChange(iface);
+        });
+    }
+
+    /**
+     * Set DNS servers for the given interface and, if it currently has a connected network,
+     * push them to the DNS resolver immediately. The new servers are also persisted so they
+     * survive reboots and network reprovisioning.
+     */
+    void setDnsServers(@NonNull final String iface, @NonNull final List<InetAddress> servers) {
+        if (DBG) {
+            Log.i(TAG, "setDnsServers, iface: " + iface + ", servers: " + servers);
+        }
+        mHandler.post(() -> {
+            final int netId = mFactory.getNetId(iface);
+            // Keep LinkProperties in sync so that DnsManager does not overwrite the new
+            // servers on its next configuration update for this network.
+            mFactory.updateLinkPropertiesDns(iface, servers);
+            mConfigStore.setDnsServers(iface, netId, servers);
             broadcastInterfaceStateChange(iface);
         });
     }

@@ -19,6 +19,7 @@ package android.net;
 import static android.annotation.SystemApi.Client.MODULE_LIBRARIES;
 
 import android.annotation.CallbackExecutor;
+import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -206,6 +207,28 @@ public class EthernetManager {
     public void setConfiguration(@NonNull String iface, @NonNull IpConfiguration config) {
         try {
             mService.setConfiguration(iface, config);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Set DNS servers for the given ethernet interface, without touching the rest of its
+     * configuration.
+     *
+     * The new servers take effect immediately if the interface currently has a connected
+     * network, and are persisted so they survive reboots and network reprovisioning.
+     *
+     * @param iface name of the interface, e.g. eth0.
+     * @param servers list of DNS server IP addresses, must not be empty.
+     * @hide
+     */
+    @SystemApi
+    @FlaggedApi("com.android.net.flags.ethernet_set_dns_servers")
+    @RequiresPermission(android.Manifest.permission.NETWORK_SETTINGS)
+    public void setDnsServers(@NonNull String iface, @NonNull List<String> servers) {
+        try {
+            mService.setDnsServers(iface, servers);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

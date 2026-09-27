@@ -30,6 +30,7 @@ import android.net.IEthernetManager;
 import android.net.IEthernetServiceListener;
 import android.net.INetworkInterfaceOutcomeReceiver;
 import android.net.ITetheredInterfaceCallback;
+import android.net.InetAddresses;
 import android.net.IpConfiguration;
 import android.net.NetworkCapabilities;
 import android.net.NetworkSpecifier;
@@ -44,6 +45,8 @@ import com.android.net.module.util.PermissionUtils;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -126,6 +129,32 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
         // TODO: this does not check proxy settings, gateways, etc.
         // Fix this by making IpConfiguration a complete representation of static configuration.
         mTracker.updateIpConfiguration(iface, new IpConfiguration(config));
+    }
+
+    /**
+     * Set DNS servers for the given ethernet interface without changing the rest of its
+     * configuration. The new servers take effect immediately if the interface is connected
+     * and are persisted across reboots and reprovisioning.
+     */
+    @Override
+    public void setDnsServers(String iface, List<String> servers) {
+        throwIfEthernetNotStarted();
+
+        // Unlike setConfiguration, this entry point is meant to be callable by the settings
+        // UI, which holds NETWORK_SETTINGS but not the network stack permission.
+        mContext.enforceCallingOrSelfPermission(
+                android.Manifest.permission.NETWORK_SETTINGS, TAG);
+        if (mTracker.isRestrictedInterface(iface)) {
+            PermissionUtils.enforceRestrictedNetworkPermission(mContext, TAG);
+        }
+        if (servers == null || servers.isEmpty()) {
+            throw new IllegalArgumentException("DNS server list must not be empty");
+        }
+        final List<InetAddress> dnsServers = new ArrayList<>(servers.size());
+        for (final String server : servers) {
+            dnsServers.add(InetAddresses.parseNumericAddress(server));
+        }
+        mTracker.setDnsServers(iface, dnsServers);
     }
 
     /**

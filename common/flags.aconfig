@@ -73,3 +73,10 @@ flag {
   description: "Flag for API to register nsd offload engine"
   bug: "301713539"
 }
+
+flag {
+  name: "ethernet_set_dns_servers"
+  namespace: "android_core_networking"
+  description: "Flag for EthernetManager API to set DNS servers on an ethernet interface"
+  bug: "170729553"
+}
