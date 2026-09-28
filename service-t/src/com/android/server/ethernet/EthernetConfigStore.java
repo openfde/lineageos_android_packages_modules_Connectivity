@@ -308,7 +308,8 @@ public class EthernetConfigStore {
                 result.add(server);
             }
         }
-        if (result.size() == DNS_RESOLVER_SERVER_QUERY_SIZE) {
+        final String lastServerSlot = servers[DNS_RESOLVER_SERVER_QUERY_SIZE - 1];
+        if (lastServerSlot != null && !lastServerSlot.isEmpty()) {
             Log.e(TAG, "getDnsServersFromResolver: resolver server list may be truncated");
         }
         return result;
