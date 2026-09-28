@@ -243,15 +243,19 @@ public class EthernetConfigStoreTest {
 
     @Test
     public void testGetDnsServersFromResolverReturnsEmptyOnExceptionOrUnavailable() throws Exception {
-        final IDnsResolver resolver = mock(IDnsResolver.class);
-        doThrow(new RemoteException()).when(resolver)
+        final IDnsResolver remoteExceptionResolver = mock(IDnsResolver.class);
+        doThrow(new RemoteException()).when(remoteExceptionResolver)
                 .getResolverInfo(anyInt(), any(), any(), any(), any(), any(), any());
-        final EthernetConfigStore store = new EthernetConfigStore(null, resolver);
-        assertTrue(store.getDnsServersFromResolver(42).isEmpty());
+        final EthernetConfigStore remoteExceptionStore =
+                new EthernetConfigStore(null, remoteExceptionResolver);
+        assertTrue(remoteExceptionStore.getDnsServersFromResolver(42).isEmpty());
 
-        doThrow(new ServiceSpecificException(1)).when(resolver)
+        final IDnsResolver serviceSpecificResolver = mock(IDnsResolver.class);
+        doThrow(new ServiceSpecificException(1)).when(serviceSpecificResolver)
                 .getResolverInfo(anyInt(), any(), any(), any(), any(), any(), any());
-        assertTrue(store.getDnsServersFromResolver(42).isEmpty());
+        final EthernetConfigStore serviceSpecificStore =
+                new EthernetConfigStore(null, serviceSpecificResolver);
+        assertTrue(serviceSpecificStore.getDnsServersFromResolver(42).isEmpty());
 
         final EthernetConfigStore unavailableStore = new EthernetConfigStore(null, null);
         assertTrue(unavailableStore.getDnsServersFromResolver(42).isEmpty());
