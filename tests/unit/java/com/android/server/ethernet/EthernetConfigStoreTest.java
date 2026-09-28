@@ -266,9 +266,21 @@ public class EthernetConfigStoreTest {
         final EthernetConfigStore store = new EthernetConfigStore();
         final File configFile = new File(mApexTestDir.getPath(), "test.txt");
         store.write("eth0", LEGACY_IP_CONFIG, configFile.getPath());
+        store.write("eth1", APEX_IP_CONFIG, configFile.getPath());
+        final StaticIpConfiguration emptyDnsStaticConfig =
+                new StaticIpConfiguration.Builder()
+                        .setIpAddress(LINKADDR)
+                        .setGateway(GATEWAY)
+                        .build();
+        final IpConfiguration emptyDnsIpConfig =
+                new IpConfiguration(IpAssignment.STATIC, ProxySettings.NONE,
+                        emptyDnsStaticConfig, null);
+        store.write("eth2", emptyDnsIpConfig, configFile.getPath());
         waitForMs(50);
 
+        assertTrue(store.getPersistedDnsServers("eth3").isEmpty());
         assertTrue(store.getPersistedDnsServers("eth1").isEmpty());
+        assertTrue(store.getPersistedDnsServers("eth2").isEmpty());
         assertEquals(List.of("8.8.8.8", "8.8.4.4"), store.getPersistedDnsServers("eth0"));
         assertNotNull(store.getPersistedDnsServers("eth0"));
         configFile.delete();
