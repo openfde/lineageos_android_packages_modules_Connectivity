@@ -70,8 +70,7 @@ public class EthernetConfigStore {
     private static final int DNS_RESOLVER_DEFAULT_SUCCESS_THRESHOLD_PERCENT = 25;
     private static final int DNS_RESOLVER_DEFAULT_MIN_SAMPLES = 8;
     private static final int DNS_RESOLVER_DEFAULT_MAX_SAMPLES = 64;
-    private static final int DNS_RESOLVER_SERVER_QUERY_INITIAL_SIZE = 4;
-    private static final int DNS_RESOLVER_SERVER_QUERY_MAX_SIZE = 64;
+    private static final int DNS_RESOLVER_SERVER_QUERY_SIZE = 64;
 
     private IpConfigStore mStore = new IpConfigStore();
     private final ArrayMap<String, IpConfiguration> mIpConfigurations;
@@ -289,36 +288,30 @@ public class EthernetConfigStore {
 
         final IDnsResolver resolver = getDnsResolver();
         if (resolver == null) return Collections.emptyList();
-        int serverArraySize = DNS_RESOLVER_SERVER_QUERY_INITIAL_SIZE;
-        while (true) {
-            final String[] servers = new String[serverArraySize];
-            final String[] domains = new String[serverArraySize];
-            final String[] tlsServers = new String[serverArraySize];
-            final int[] params = new int[IDnsResolver.RESOLVER_PARAMS_COUNT];
-            final int[] stats = new int[serverArraySize * IDnsResolver.RESOLVER_STATS_COUNT];
-            final int[] waitForPendingReqTimeoutCount = new int[1];
-            try {
-                resolver.getResolverInfo(netId, servers, domains, tlsServers, params, stats,
-                        waitForPendingReqTimeoutCount);
-            } catch (RemoteException | ServiceSpecificException e) {
-                Log.e(TAG, "getDnsServersFromResolver: failed for netId " + netId, e);
-                return Collections.emptyList();
-            }
-            final ArrayList<String> result = new ArrayList<>();
-            for (final String server : servers) {
-                if (server != null && !server.isEmpty()) {
-                    result.add(server);
-                }
-            }
-            if (result.size() < serverArraySize) {
-                return result;
-            }
-            if (serverArraySize >= DNS_RESOLVER_SERVER_QUERY_MAX_SIZE) {
-                Log.e(TAG, "getDnsServersFromResolver: resolver server list may be truncated");
-                return result;
-            }
-            serverArraySize = Math.min(serverArraySize * 2, DNS_RESOLVER_SERVER_QUERY_MAX_SIZE);
+        final String[] servers = new String[DNS_RESOLVER_SERVER_QUERY_SIZE];
+        final String[] domains = new String[DNS_RESOLVER_SERVER_QUERY_SIZE];
+        final String[] tlsServers = new String[DNS_RESOLVER_SERVER_QUERY_SIZE];
+        final int[] params = new int[IDnsResolver.RESOLVER_PARAMS_COUNT];
+        final int[] stats =
+                new int[DNS_RESOLVER_SERVER_QUERY_SIZE * IDnsResolver.RESOLVER_STATS_COUNT];
+        final int[] waitForPendingReqTimeoutCount = new int[1];
+        try {
+            resolver.getResolverInfo(netId, servers, domains, tlsServers, params, stats,
+                    waitForPendingReqTimeoutCount);
+        } catch (RemoteException | ServiceSpecificException e) {
+            Log.e(TAG, "getDnsServersFromResolver: failed for netId " + netId, e);
+            return Collections.emptyList();
         }
+        final ArrayList<String> result = new ArrayList<>();
+        for (final String server : servers) {
+            if (server != null && !server.isEmpty()) {
+                result.add(server);
+            }
+        }
+        if (result.size() == DNS_RESOLVER_SERVER_QUERY_SIZE) {
+            Log.e(TAG, "getDnsServersFromResolver: resolver server list may be truncated");
+        }
+        return result;
     }
 
     @NonNull

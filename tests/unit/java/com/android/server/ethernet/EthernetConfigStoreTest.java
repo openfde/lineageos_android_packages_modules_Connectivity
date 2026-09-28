@@ -242,6 +242,24 @@ public class EthernetConfigStoreTest {
     }
 
     @Test
+    public void testGetDnsServersFromResolverFullBufferReturnsAllEntries() throws Exception {
+        final IDnsResolver resolver = mock(IDnsResolver.class);
+        doAnswer(invocation -> {
+            final String[] servers = invocation.getArgument(1);
+            for (int i = 0; i < servers.length; i++) {
+                servers[i] = "192.0.2." + i;
+            }
+            return null;
+        }).when(resolver).getResolverInfo(anyInt(), any(), any(), any(), any(), any(), any());
+
+        final EthernetConfigStore store = new EthernetConfigStore(null, resolver);
+        final List<String> result = store.getDnsServersFromResolver(42);
+        assertEquals(64, result.size());
+        assertEquals("192.0.2.0", result.get(0));
+        assertEquals("192.0.2.63", result.get(63));
+    }
+
+    @Test
     public void testGetDnsServersFromResolverReturnsEmptyOnExceptionOrUnavailable() throws Exception {
         final IDnsResolver remoteExceptionResolver = mock(IDnsResolver.class);
         doThrow(new RemoteException()).when(remoteExceptionResolver)
