@@ -235,6 +235,25 @@ public class EthernetManager {
     }
 
     /**
+     * Get DNS servers for the given ethernet interface.
+     *
+     * @param iface name of the interface, e.g. eth0.
+     * @return current DNS server IP addresses for this interface, or an empty list.
+     * @hide
+     */
+    @SystemApi
+    @FlaggedApi("com.android.net.flags.ethernet_set_dns_servers")
+    @RequiresPermission(android.Manifest.permission.NETWORK_SETTINGS)
+    @NonNull
+    public List<String> getDnsServers(@NonNull String iface) {
+        try {
+            return mService.getDnsServers(iface);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
      * Indicates whether the system currently has one or more Ethernet interfaces.
      * @hide
      */

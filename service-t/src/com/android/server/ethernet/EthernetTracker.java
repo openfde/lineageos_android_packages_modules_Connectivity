@@ -62,10 +62,12 @@ import com.android.server.connectivity.ConnectivityResources;
 import java.io.FileDescriptor;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 import android.openfde.Net;
 
@@ -251,6 +253,13 @@ public class EthernetTracker {
     EthernetTracker(@NonNull final Context context, @NonNull final Handler handler,
             @NonNull final EthernetNetworkFactory factory, @NonNull final INetd netd,
             @NonNull final Dependencies deps) {
+        this(context, handler, factory, netd, deps, new EthernetConfigStore(context));
+    }
+
+    @VisibleForTesting
+    EthernetTracker(@NonNull final Context context, @NonNull final Handler handler,
+            @NonNull final EthernetNetworkFactory factory, @NonNull final INetd netd,
+            @NonNull final Dependencies deps, @NonNull final EthernetConfigStore configStore) {
         mContext = context;
         mHandler = handler;
         mFactory = factory;
@@ -279,7 +288,7 @@ public class EthernetTracker {
         }
         */
         mIfaceMatch = "eth\\d+";
-        mConfigStore = new EthernetConfigStore(mContext);
+        mConfigStore = configStore;
         mNetlinkMonitor = new EthernetNetlinkMonitor(mHandler);
     }
 
@@ -327,6 +336,24 @@ public class EthernetTracker {
             mConfigStore.setDnsServers(iface, netId, servers);
             broadcastInterfaceStateChange(iface);
         });
+    }
+
+    @NonNull
+    List<String> getDnsServers(@NonNull final String iface) {
+        final AtomicReference<List<String>> serversRef =
+                new AtomicReference<>(Collections.emptyList());
+        postAndWaitForRunnable(() -> {
+            final int netId = mFactory.getNetId(iface);
+            if (netId >= 0) {
+                // Connected: query current runtime values from resolver. If resolver has no data,
+                // keep the empty result and do not override with persisted configuration.
+                serversRef.set(mConfigStore.getDnsServersFromResolver(netId));
+                return;
+            }
+            serversRef.set(mConfigStore.getPersistedDnsServers(iface));
+        });
+        final List<String> servers = serversRef.get();
+        return servers == null ? Collections.emptyList() : servers;
     }
 
     private void writeIpConfiguration(@NonNull final String iface,
