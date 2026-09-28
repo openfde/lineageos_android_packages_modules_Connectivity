@@ -310,8 +310,12 @@ public class EthernetConfigStore {
                     result.add(server);
                 }
             }
-            if (result.size() < serverArraySize || serverArraySize >= DNS_RESOLVER_SERVER_QUERY_MAX_SIZE) {
+            if (result.size() < serverArraySize) {
                 return result;
+            }
+            if (serverArraySize >= DNS_RESOLVER_SERVER_QUERY_MAX_SIZE) {
+                Log.e(TAG, "getDnsServersFromResolver: resolver server list may be truncated");
+                return Collections.emptyList();
             }
             serverArraySize = Math.min(serverArraySize * 2, DNS_RESOLVER_SERVER_QUERY_MAX_SIZE);
         }
