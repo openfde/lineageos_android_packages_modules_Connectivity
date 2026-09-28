@@ -319,7 +319,8 @@ public class EthernetConfigStore {
     public List<String> getPersistedDnsServers(@NonNull final String iface) {
         synchronized (mSync) {
             final IpConfiguration config = mIpConfigurations.get(iface);
-            if (config == null || config.getStaticIpConfiguration() == null) {
+            if (config == null || config.getIpAssignment() != IpAssignment.STATIC
+                    || config.getStaticIpConfiguration() == null) {
                 return Collections.emptyList();
             }
             final List<InetAddress> dnsServers = config.getStaticIpConfiguration().dnsServers;
