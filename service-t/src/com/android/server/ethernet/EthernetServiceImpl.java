@@ -47,6 +47,7 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -155,6 +156,19 @@ public class EthernetServiceImpl extends IEthernetManager.Stub {
             dnsServers.add(InetAddresses.parseNumericAddress(server));
         }
         mTracker.setDnsServers(iface, dnsServers);
+    }
+
+    @Override
+    public List<String> getDnsServers(String iface) {
+        throwIfEthernetNotStarted();
+
+        mContext.enforceCallingOrSelfPermission(
+                android.Manifest.permission.NETWORK_SETTINGS, TAG);
+        if (mTracker.isRestrictedInterface(iface)) {
+            PermissionUtils.enforceRestrictedNetworkPermission(mContext, TAG);
+        }
+        final List<String> servers = mTracker.getDnsServers(iface);
+        return servers == null ? Collections.emptyList() : servers;
     }
 
     /**

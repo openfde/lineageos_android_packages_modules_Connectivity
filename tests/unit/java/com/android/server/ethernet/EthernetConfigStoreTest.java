@@ -18,11 +18,16 @@ package com.android.server.ethernet;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -36,6 +41,8 @@ import android.net.LinkAddress;
 import android.net.ProxyInfo;
 import android.net.ResolverParamsParcel;
 import android.net.StaticIpConfiguration;
+import android.os.RemoteException;
+import android.os.ServiceSpecificException;
 import android.util.ArrayMap;
 
 import androidx.test.InstrumentationRegistry;
@@ -217,6 +224,83 @@ public class EthernetConfigStoreTest {
                 List.of(InetAddresses.parseNumericAddress("1.1.1.1")), configFile.getPath()));
         verify(resolver, never()).setResolverConfiguration(any());
 
+        configFile.delete();
+    }
+
+    @Test
+    public void testGetDnsServersFromResolverReturnsServers() throws Exception {
+        final IDnsResolver resolver = mock(IDnsResolver.class);
+        doAnswer(invocation -> {
+            final String[] servers = invocation.getArgument(1);
+            servers[0] = "1.1.1.1";
+            servers[1] = "8.8.8.8";
+            return null;
+        }).when(resolver).getResolverInfo(anyInt(), any(), any(), any(), any(), any(), any());
+
+        final EthernetConfigStore store = new EthernetConfigStore(null, resolver);
+        assertEquals(List.of("1.1.1.1", "8.8.8.8"), store.getDnsServersFromResolver(42));
+    }
+
+    @Test
+    public void testGetDnsServersFromResolverFullBufferReturnsAllEntries() throws Exception {
+        final IDnsResolver resolver = mock(IDnsResolver.class);
+        doAnswer(invocation -> {
+            final String[] servers = invocation.getArgument(1);
+            for (int i = 0; i < servers.length; i++) {
+                servers[i] = "192.0.2." + i;
+            }
+            return null;
+        }).when(resolver).getResolverInfo(anyInt(), any(), any(), any(), any(), any(), any());
+
+        final EthernetConfigStore store = new EthernetConfigStore(null, resolver);
+        final List<String> result = store.getDnsServersFromResolver(42);
+        assertEquals(64, result.size());
+        assertEquals("192.0.2.0", result.get(0));
+        assertEquals("192.0.2.63", result.get(63));
+    }
+
+    @Test
+    public void testGetDnsServersFromResolverReturnsEmptyOnExceptionOrUnavailable() throws Exception {
+        final IDnsResolver remoteExceptionResolver = mock(IDnsResolver.class);
+        doThrow(new RemoteException()).when(remoteExceptionResolver)
+                .getResolverInfo(anyInt(), any(), any(), any(), any(), any(), any());
+        final EthernetConfigStore remoteExceptionStore =
+                new EthernetConfigStore(null, remoteExceptionResolver);
+        assertTrue(remoteExceptionStore.getDnsServersFromResolver(42).isEmpty());
+
+        final IDnsResolver serviceSpecificResolver = mock(IDnsResolver.class);
+        doThrow(new ServiceSpecificException(1)).when(serviceSpecificResolver)
+                .getResolverInfo(anyInt(), any(), any(), any(), any(), any(), any());
+        final EthernetConfigStore serviceSpecificStore =
+                new EthernetConfigStore(null, serviceSpecificResolver);
+        assertTrue(serviceSpecificStore.getDnsServersFromResolver(42).isEmpty());
+
+        final EthernetConfigStore unavailableStore = new EthernetConfigStore(null, null);
+        assertTrue(unavailableStore.getDnsServersFromResolver(42).isEmpty());
+    }
+
+    @Test
+    public void testGetPersistedDnsServersReturnsEmptyForUnknownIface() throws Exception {
+        final EthernetConfigStore store = new EthernetConfigStore();
+        final File configFile = new File(mApexTestDir.getPath(), "test.txt");
+        store.write("eth0", LEGACY_IP_CONFIG, configFile.getPath());
+        store.write("eth1", APEX_IP_CONFIG, configFile.getPath());
+        final StaticIpConfiguration emptyDnsStaticConfig =
+                new StaticIpConfiguration.Builder()
+                        .setIpAddress(LINKADDR)
+                        .setGateway(GATEWAY)
+                        .build();
+        final IpConfiguration emptyDnsIpConfig =
+                new IpConfiguration(IpAssignment.STATIC, ProxySettings.NONE,
+                        emptyDnsStaticConfig, null);
+        store.write("eth2", emptyDnsIpConfig, configFile.getPath());
+        waitForMs(50);
+
+        assertTrue(store.getPersistedDnsServers("eth3").isEmpty());
+        assertTrue(store.getPersistedDnsServers("eth1").isEmpty());
+        assertTrue(store.getPersistedDnsServers("eth2").isEmpty());
+        assertEquals(List.of("8.8.8.8", "8.8.4.4"), store.getPersistedDnsServers("eth0"));
+        assertNotNull(store.getPersistedDnsServers("eth0"));
         configFile.delete();
     }
 }

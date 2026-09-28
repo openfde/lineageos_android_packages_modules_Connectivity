@@ -38,6 +38,7 @@ import com.android.modules.utils.BackgroundThread;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Executor;
@@ -229,6 +230,28 @@ public class EthernetManager {
     public void setDnsServers(@NonNull String iface, @NonNull List<String> servers) {
         try {
             mService.setDnsServers(iface, servers);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Get DNS servers for the given ethernet interface.
+     *
+     * @param iface name of the interface, e.g. eth0.
+     * @return current resolver DNS server IP addresses when the interface is connected; otherwise
+     *         persisted DNS server addresses for the interface. Returns an empty list if no DNS
+     *         servers are available.
+     * @hide
+     */
+    @SystemApi
+    @FlaggedApi("com.android.net.flags.ethernet_set_dns_servers")
+    @RequiresPermission(android.Manifest.permission.NETWORK_SETTINGS)
+    @NonNull
+    public List<String> getDnsServers(@NonNull String iface) {
+        try {
+            final List<String> servers = mService.getDnsServers(iface);
+            return servers == null ? Collections.emptyList() : servers;
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

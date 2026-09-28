@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import android.content.Context;
@@ -57,6 +58,7 @@ import org.mockito.MockitoAnnotations;
 
 import java.net.InetAddress;
 import java.util.ArrayList;
+import java.util.List;
 
 @SmallTest
 @RunWith(DevSdkIgnoreRunner.class)
@@ -72,6 +74,7 @@ public class EthernetTrackerTest {
     @Mock private EthernetNetworkFactory mFactory;
     @Mock private INetd mNetd;
     @Mock private EthernetTracker.Dependencies mDeps;
+    @Mock private EthernetConfigStore mConfigStore;
 
     @Before
     public void setUp() throws RemoteException {
@@ -82,7 +85,7 @@ public class EthernetTrackerTest {
         mHandlerThread = new HandlerThread(THREAD_NAME);
         mHandlerThread.start();
         tracker = new EthernetTracker(mContext, mHandlerThread.getThreadHandler(), mFactory, mNetd,
-                mDeps);
+                mDeps, mConfigStore);
     }
 
     @After
@@ -374,5 +377,39 @@ public class EthernetTrackerTest {
         final boolean isValidTestInterface = tracker.isValidTestInterface(validIfaceName);
 
         assertTrue(isValidTestInterface);
+    }
+
+    @Test
+    public void testGetDnsServersConnectedReturnsResolverServers() {
+        doReturn(42).when(mFactory).getNetId(eq(TEST_IFACE));
+        doReturn(List.of("1.1.1.1")).when(mConfigStore).getDnsServersFromResolver(eq(42));
+
+        assertEquals(List.of("1.1.1.1"), tracker.getDnsServers(TEST_IFACE));
+        verify(mConfigStore, never()).getPersistedDnsServers(anyString());
+    }
+
+    @Test
+    public void testGetDnsServersConnectedResolverEmptyDoesNotFallbackToPersisted() {
+        doReturn(42).when(mFactory).getNetId(eq(TEST_IFACE));
+        doReturn(List.of()).when(mConfigStore).getDnsServersFromResolver(eq(42));
+
+        assertTrue(tracker.getDnsServers(TEST_IFACE).isEmpty());
+        verify(mConfigStore, never()).getPersistedDnsServers(anyString());
+    }
+
+    @Test
+    public void testGetDnsServersDisconnectedReturnsPersistedServers() {
+        doReturn(-1).when(mFactory).getNetId(eq(TEST_IFACE));
+        doReturn(List.of("9.9.9.9")).when(mConfigStore).getPersistedDnsServers(eq(TEST_IFACE));
+
+        assertEquals(List.of("9.9.9.9"), tracker.getDnsServers(TEST_IFACE));
+    }
+
+    @Test
+    public void testGetDnsServersUnknownInterfaceReturnsEmpty() {
+        doReturn(-1).when(mFactory).getNetId(eq("unknown0"));
+        doReturn(List.of()).when(mConfigStore).getPersistedDnsServers(eq("unknown0"));
+
+        assertTrue(tracker.getDnsServers("unknown0").isEmpty());
     }
 }
