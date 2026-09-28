@@ -315,7 +315,7 @@ public class EthernetConfigStore {
             }
             if (serverArraySize >= DNS_RESOLVER_SERVER_QUERY_MAX_SIZE) {
                 Log.e(TAG, "getDnsServersFromResolver: resolver server list may be truncated");
-                return Collections.emptyList();
+                return result;
             }
             serverArraySize = Math.min(serverArraySize * 2, DNS_RESOLVER_SERVER_QUERY_MAX_SIZE);
         }
