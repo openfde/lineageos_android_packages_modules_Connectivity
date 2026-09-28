@@ -238,7 +238,9 @@ public class EthernetManager {
      * Get DNS servers for the given ethernet interface.
      *
      * @param iface name of the interface, e.g. eth0.
-     * @return current DNS server IP addresses for this interface, or an empty list.
+     * @return current resolver DNS server IP addresses when the interface is connected; otherwise
+     *         persisted DNS server addresses for the interface. Returns an empty list if no DNS
+     *         servers are available.
      * @hide
      */
     @SystemApi
